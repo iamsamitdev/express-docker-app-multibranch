@@ -173,26 +173,44 @@ jobs:
       - name: Send success notification to n8n
         if: success()
         run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           curl -X POST ${{ secrets.N8N_WEBHOOK_URL }} \
             -H "Content-Type: application/json" \
-            -d '{
-              "project": "${{ github.repository }}",
-              "stage": "Deploy to DEV",
-              "status": "success",
-              "build": "${{ github.run_number }}",
-              "image": "${{ env.DOCKER_REPO }}:${{ needs.build-and-test.outputs.image_tag }}",
-              "container": "${{ env.DEV_APP_NAME }}",
-              "url": "http://localhost:${{ env.DEV_HOST_PORT }}/",
-              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S%z)"
-            }' || echo "Failed to send notification"
+            -d "{
+              \"project\": \"${{ github.repository }}\",
+              \"stage\": \"Deploy to DEV\",
+              \"status\": \"success\",
+              \"build\": \"${{ github.run_number }}\",
+              \"image\": \"${{ env.DOCKER_REPO }}:${{ needs.build-and-test.outputs.image_tag }}\",
+              \"container\": \"${{ env.DEV_APP_NAME }}\",
+              \"url\": \"http://localhost:${{ env.DEV_HOST_PORT }}/\",
+              \"timestamp\": \"${TIMESTAMP}\"
+            }" || echo "Failed to send notification"
   
   # =================================================================
   # JOB 4: DEPLOY TO PROD (เมื่อเป็น branch main)
   # =================================================================
+  # Job 4a: Approval for Production
+  approval-prod:
+    name: Approval for Production
+    runs-on: ubuntu-latest
+    needs: [build-and-test, build-and-push-docker]
+    if: github.ref_name == 'main' && github.event.inputs.action != 'Rollback'
+    environment:
+      name: production-approval
+    
+    steps:
+      - name: Wait for approval
+        run: |
+          echo "🔐 Waiting for manual approval to deploy to production..."
+          echo "Image: ${{ env.DOCKER_REPO }}:${{ needs.build-and-test.outputs.image_tag }}"
+          echo "This step requires approval from designated reviewers"
+  
+  # Job 4b: Deploy to Production
   deploy-prod:
     name: Deploy to PROD
     runs-on: ubuntu-latest
-    needs: [build-and-test, build-and-push-docker]
+    needs: [build-and-test, build-and-push-docker, approval-prod]
     if: github.ref_name == 'main' && github.event.inputs.action != 'Rollback'
     environment:
       name: production
@@ -218,18 +236,19 @@ jobs:
       - name: Send success notification to n8n
         if: success()
         run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           curl -X POST ${{ secrets.N8N_WEBHOOK_URL }} \
             -H "Content-Type: application/json" \
-            -d '{
-              "project": "${{ github.repository }}",
-              "stage": "Deploy to PROD",
-              "status": "success",
-              "build": "${{ github.run_number }}",
-              "image": "${{ env.DOCKER_REPO }}:${{ needs.build-and-test.outputs.image_tag }}",
-              "container": "${{ env.PROD_APP_NAME }}",
-              "url": "http://localhost:${{ env.PROD_HOST_PORT }}/",
-              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S%z)"
-            }' || echo "Failed to send notification"
+            -d "{
+              \"project\": \"${{ github.repository }}\",
+              \"stage\": \"Deploy to PROD\",
+              \"status\": \"success\",
+              \"build\": \"${{ github.run_number }}\",
+              \"image\": \"${{ env.DOCKER_REPO }}:${{ needs.build-and-test.outputs.image_tag }}\",
+              \"container\": \"${{ env.PROD_APP_NAME }}\",
+              \"url\": \"http://localhost:${{ env.PROD_HOST_PORT }}/\",
+              \"timestamp\": \"${TIMESTAMP}\"
+            }" || echo "Failed to send notification"
   
   # =================================================================
   # JOB 5: ROLLBACK
@@ -291,6 +310,7 @@ jobs:
             HOST_PORT="${{ env.PROD_HOST_PORT }}"
           fi
           
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           curl -X POST ${{ secrets.N8N_WEBHOOK_URL }} \
             -H "Content-Type: application/json" \
             -d "{
@@ -301,7 +321,7 @@ jobs:
               \"image\": \"${{ env.DOCKER_REPO }}:${{ github.event.inputs.rollback_tag }}\",
               \"container\": \"${APP_NAME}\",
               \"url\": \"http://localhost:${HOST_PORT}/\",
-              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S%z)\"
+              \"timestamp\": \"${TIMESTAMP}\"
             }" || echo "Failed to send notification"
   
   # =================================================================
@@ -316,15 +336,16 @@ jobs:
     steps:
       - name: Send failure notification to n8n
         run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           curl -X POST ${{ secrets.N8N_WEBHOOK_URL }} \
             -H "Content-Type: application/json" \
-            -d '{
-              "project": "${{ github.repository }}",
-              "stage": "Pipeline Failed",
-              "status": "failed",
-              "build": "${{ github.run_number }}",
-              "image": "N/A",
-              "container": "N/A",
-              "url": "N/A",
-              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S%z)"
-            }' || echo "Failed to send notification"
+            -d "{
+              \"project\": \"${{ github.repository }}\",
+              \"stage\": \"Pipeline Failed\",
+              \"status\": \"failed\",
+              \"build\": \"${{ github.run_number }}\",
+              \"image\": \"N/A\",
+              \"container\": \"N/A\",
+              \"url\": \"N/A\",
+              \"timestamp\": \"${TIMESTAMP}\"
+            }" || echo "Failed to send notification"
